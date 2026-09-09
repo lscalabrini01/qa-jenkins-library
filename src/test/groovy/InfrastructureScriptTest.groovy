@@ -5,24 +5,49 @@ import org.junit.jupiter.api.DisplayName
 import static org.assertj.core.api.Assertions.assertThat
 
 /**
- * Tests for vars/infrastructure.groovy — pure-logic functions only.
+ * Tests for vars/infrastructure.groovy.
  *
  * generateWorkspaceName() and parseAndSubstituteVars() are data-only
- * operations that don't call Jenkins steps, so they can be tested directly.
+ * operations that don't call Jenkins steps, so they are tested directly
+ * without a steps mock involved in assertions.
  *
  * Note: generateWorkspaceName uses Date.format() which is problematic
  * in Groovy 3.x. Tests here use includeTimestamp: false to avoid that
  * code path, focusing on the prefix/suffix logic.
+ *
+ * detectPublicIp() calls steps.sh/steps.echo and error(), so a stepsMock
+ * (capturing echo/sh calls) is set up in setUp() and reused across tests.
  */
 class InfrastructureScriptTest extends BasePipelineTest {
 
     def script
+    def stepsMock
+    def echoLog = []
+    def capturedShCommand = null
 
     @Override
     @BeforeEach
     void setUp() {
         super.setUp()
+
+        // Make env available to `new config()` inside infrastructure.groovy
+        def configScript = loadScript('config.groovy')
+        configScript.class.metaClass.env = binding.getVariable('env')
+
+        echoLog = []
+        capturedShCommand = null
+
+        stepsMock = new Object()
+        stepsMock.metaClass.echo = { String msg -> echoLog.add(msg) }
+        stepsMock.metaClass.sh = { Map m ->
+            capturedShCommand = m['script'] as String
+            return '203.0.113.42'
+        }
+
+        binding.setVariable('steps', stepsMock)
+
         script = loadScript('infrastructure.groovy')
+        script.class.metaClass.steps = stepsMock
     }
 
     // ── generateWorkspaceName ─────────────────────────────────────────
@@ -242,5 +267,123 @@ class InfrastructureScriptTest extends BasePipelineTest {
         )
 
         assertThat((String) result).isEqualTo('host=server and region=us-east-1')
+    }
+
+    // ── detectPublicIp ────────────────────────────────────────────────
+
+    @Test
+    @DisplayName('detectPublicIp returns a valid, trimmed IPv4 address')
+    void detectPublicIp_returnsValidIp() {
+        stepsMock.metaClass.sh = { Map m -> '  203.0.113.42  ' }
+
+        def ip = script.detectPublicIp()
+
+        assertThat((String) ip).isEqualTo('203.0.113.42')
+    }
+
+    @Test
+    @DisplayName('detectPublicIp echoes the detected IP')
+    void detectPublicIp_echoesDetectedIp() {
+        script.detectPublicIp()
+
+        assertThat(echoLog).contains('Detected runner public IP: 203.0.113.42')
+    }
+
+    @Test
+    @DisplayName('detectPublicIp defaults timeout to 5 seconds')
+    void detectPublicIp_defaultsTimeout() {
+        script.detectPublicIp()
+
+        assertThat((String) capturedShCommand).contains('--max-time 5')
+    }
+
+    @Test
+    @DisplayName('detectPublicIp honours a custom timeout')
+    void detectPublicIp_customTimeout() {
+        script.detectPublicIp(timeout: 10)
+
+        assertThat((String) capturedShCommand).contains('--max-time 10')
+    }
+
+    @Test
+    @DisplayName('detectPublicIp builds a fallback chain from the default IP services')
+    void detectPublicIp_usesDefaultServices() {
+        script.detectPublicIp()
+
+        assertThat((String) capturedShCommand)
+            .contains('https://ifconfig.me')
+            .contains('https://api.ipify.org')
+            .contains('https://ipinfo.io/ip')
+    }
+
+    @Test
+    @DisplayName('detectPublicIp uses services overridden via PUBLIC_IP_SERVICES env var')
+    void detectPublicIp_usesConfiguredServices() {
+        def envMap = binding.getVariable('env') as Map
+        envMap['PUBLIC_IP_SERVICES'] = 'https://one.example.com, https://two.example.com'
+
+        script.detectPublicIp()
+
+        assertThat((String) capturedShCommand)
+            .contains('https://one.example.com')
+            .contains('https://two.example.com')
+            .doesNotContain('https://ifconfig.me')
+    }
+
+    @Test
+    @DisplayName('detectPublicIp throws when output is not a valid IPv4 address')
+    void detectPublicIp_throwsForInvalidIp() {
+        helper.registerAllowedMethod('error', [String.class]) { String msg ->
+            throw new RuntimeException(msg)
+        }
+        stepsMock.metaClass.sh = { Map m -> 'not-an-ip' }
+
+        RuntimeException ex = null
+        try {
+            script.detectPublicIp()
+        } catch (RuntimeException e) {
+            ex = e
+        }
+
+        assertThat(ex).isNotNull()
+        assertThat((String) ex.message).contains("Failed to auto-detect a valid public IPv4 address (got: 'not-an-ip')")
+    }
+
+    @Test
+    @DisplayName('detectPublicIp throws when an octet exceeds 255')
+    void detectPublicIp_throwsForOutOfRangeOctet() {
+        helper.registerAllowedMethod('error', [String.class]) { String msg ->
+            throw new RuntimeException(msg)
+        }
+        stepsMock.metaClass.sh = { Map m -> '256.1.1.1' }
+
+        RuntimeException ex = null
+        try {
+            script.detectPublicIp()
+        } catch (RuntimeException e) {
+            ex = e
+        }
+
+        assertThat(ex).isNotNull()
+        assertThat((String) ex.message).contains('Failed to auto-detect a valid public IPv4 address')
+    }
+
+    @Test
+    @DisplayName('detectPublicIp throws when there are not exactly four octets')
+    void detectPublicIp_throwsForWrongOctetCount() {
+        helper.registerAllowedMethod('error', [String.class]) { String msg ->
+            throw new RuntimeException(msg)
+        }
+        stepsMock.metaClass.sh = { Map m -> '1.2.3' }
+
+        RuntimeException ex = null
+        try {
+            script.detectPublicIp()
+        } catch (RuntimeException e) {
+            ex = e
+        }
+
+        assertThat(ex).isNotNull()
+        assertThat((String) ex.message).contains('Failed to auto-detect a valid public IPv4 address')
     }
 }

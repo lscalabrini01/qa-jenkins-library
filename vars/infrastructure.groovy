@@ -277,18 +277,22 @@ def parseAndSubstituteVars(Map config) {
  */
 def detectPublicIp(Map config = [:]) {
     def timeout = config.timeout ?: 5
+    def globalConfig = new config()
+    def services = globalConfig.getPublicIpServices()
+
+    def curlChain = services.collect { service ->
+        "curl -4 -fsS --max-time ${timeout} ${service}"
+    }.join(' ||\n             ')
 
     def publicIp = steps.sh(
         script: """
-            (curl -4 -fsS --max-time ${timeout} https://ifconfig.me ||
-             curl -4 -fsS --max-time ${timeout} https://api.ipify.org ||
-             curl -4 -fsS --max-time ${timeout} https://ipinfo.io/ip) | tr -d '[:space:]'
+            (${curlChain}) | tr -d '[:space:]'
         """,
         returnStdout: true
     ).trim()
 
     def octets = publicIp.tokenize('.')
-    if (octets.size() != 4 || !octets.every { it ==~ /\d{1,3}/ && it.toInteger() >= 0 && it.toInteger() <= 255 }) {
+    if (octets.size() != 4 || !octets.every { it ==~ /\d{1,3}/ && it.toInteger() <= 255 }) {
         error "Failed to auto-detect a valid public IPv4 address (got: '${publicIp}')"
     }
 

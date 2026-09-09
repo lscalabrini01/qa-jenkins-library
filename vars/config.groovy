@@ -70,6 +70,13 @@ def getDefaultConfig() {
             validationDir: env.VALIDATION_DIR ?: 'validation'
         ],
 
+        // Network configuration
+        network: [
+            publicIpServices: env.PUBLIC_IP_SERVICES ?
+                env.PUBLIC_IP_SERVICES.split(',').collect { it.trim() } :
+                ['https://ifconfig.me', 'https://api.ipify.org', 'https://ipinfo.io/ip']
+        ],
+
         // Repository configuration
         repositories: [
             tests: [
@@ -287,5 +294,22 @@ def getPathConfig() {
 def getRepositoryConfig(String name) {
     def repoConfig = getConfig('repositories')
     return repoConfig[name] ?: [:]
+}
+
+/**
+ * Convenience accessor — return the list of public IP detection service URLs.
+ *
+ * Used by infrastructure.detectPublicIp() to try each service in order
+ * until one returns a valid IPv4 address. Override with the PUBLIC_IP_SERVICES
+ * environment variable (comma-separated URLs).
+ *
+ * Returns a List<String> of service URLs.
+ *
+ * Example:
+ *   def services = new config().getPublicIpServices()
+ *   // → ['https://ifconfig.me', 'https://api.ipify.org', 'https://ipinfo.io/ip']
+ */
+def getPublicIpServices() {
+    return getConfigValue('network', 'publicIpServices')
 }
 
