@@ -259,6 +259,48 @@ def parseAndSubstituteVars(Map config) {
 }
 
 /**
+ * Auto-detect this runner's public IPv4 address.
+ *
+ * Queries a primary IP-echo service, falling back to alternates if the
+ * first is unreachable, then validates the result is a well-formed IPv4
+ * address. Useful for allow-listing the runner's address in ephemeral
+ * security group ingress rules (e.g. so Ansible/SSH traffic originating
+ * from this runner is permitted).
+ *
+ * Parameters:
+ *   timeout (int, optional) - Per-request max time in seconds. Defaults to 5.
+ *
+ * Returns the detected public IPv4 address as a String.
+ *
+ * Example:
+ *   env.RUNNER_PUBLIC_IP = infrastructure.detectPublicIp()
+ */
+def detectPublicIp(Map config = [:]) {
+    def timeout = config.timeout ?: 5
+    def globalConfig = new config()
+    def services = globalConfig.getPublicIpServices()
+
+    def curlChain = services.collect { service ->
+        "curl -4 -fsS --max-time ${timeout} ${service}"
+    }.join(' ||\n             ')
+
+    def publicIp = steps.sh(
+        script: """
+            (${curlChain}) | tr -d '[:space:]'
+        """,
+        returnStdout: true
+    ).trim()
+
+    def octets = publicIp.tokenize('.')
+    if (octets.size() != 4 || !octets.every { it ==~ /\d{1,3}/ && it.toInteger() <= 255 }) {
+        error "Failed to auto-detect a valid public IPv4 address (got: '${publicIp}')"
+    }
+
+    steps.echo "Detected runner public IP: ${publicIp}"
+    return publicIp
+}
+
+/**
  * Extract the directory path from a file path.
  *
  * Given a file path, returns the directory containing the file by extracting
