@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Review changes to this Jenkins Groovy shared library (vars/*.groovy, src/test/groovy/*.groovy, build.gradle) against the repository's established style, structure, testing, documentation, and shell-safety conventions. Use when asked to review a diff, PR, or specific Groovy file in this repo — not for generic or non-Groovy code review.
+description: Review changes to this Jenkins Groovy shared library (vars/*.groovy, src/test/groovy/*.groovy, build.gradle, settings.gradle, gradle.lockfile) against the repository's established style, structure, testing, documentation, and shell-safety conventions. Use when asked to review a diff, PR, or specific Groovy file in this repo — not for generic or non-Groovy code review.
 user-invocable: true
 ---
 
@@ -44,8 +44,7 @@ deviations found in the diff — do not invent issues or flag pre-existing code
 outside the change unless it is directly coupled to it.
 
 ### Style
-- Public functions use named `Map` parameters (`def fn(Map config)`), never
-  positional args.
+- New public functions should use named Map parameters (`def fn(Map config)`); do not introduce positional args.
 - Private helpers are prefixed with `_` (e.g. `_getImage`, `_containerCommand`).
 - Cross-module calls use `new` (`new config()`, `new infrastructure()`, `new tofu()`).
 - Formatting/spacing is consistent with neighboring functions in the same file

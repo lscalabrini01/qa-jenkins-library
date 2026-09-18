@@ -10,7 +10,7 @@ Gradle wrapper (`gradlew`/`gradlew.bat`) with the `groovy` plugin; no `src/main`
 - Run a single test class: `./gradlew test --tests "InfrastructureScriptTest"`
 - Run a single test method: `./gradlew test --tests "InfrastructureScriptTest.methodName"`
 - Dependencies are version-locked (`gradle.lockfile` via `dependencyLocking`) — after changing `build.gradle` dependencies, regenerate locks with `./gradlew dependencies --write-locks`
-- Test stack: JUnit 5 (Jupiter) + JenkinsPipelineUnit (`BasePipelineTest`) + AssertJ; Spock (`spock-core`) is also on the test classpath
+- Test stack: JUnit Jupiter + JenkinsPipelineUnit (`BasePipelineTest`) + AssertJ; Spock (`spock-core`) is also on the test classpath
 - There is no separate lint task; Groovy style is enforced only through code review against the conventions below
 
 ## Architecture
